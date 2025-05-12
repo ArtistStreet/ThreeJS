@@ -1,197 +1,201 @@
 import WindowManager from './WindowManager.js'
 
-
-
 const t = THREE;
 let camera, scene, renderer, world;
-let near, far;
-let pixR = window.devicePixelRatio ? window.devicePixelRatio : 1;
-let cubes = [];
-let sceneOffsetTarget = {x: 0, y: 0};
-let sceneOffset = {x: 0, y: 0};
-
-let today = new Date();
-today.setHours(0);
-today.setMinutes(0);
-today.setSeconds(0);
-today.setMilliseconds(0);
-today = today.getTime();
-
-let internalTime = getTime();
+let pixR = window.devicePixelRatio || 1;
+let planes = [];
+let sceneOffset = { x: 0, y: 0 };
+let sceneOffsetTarget = { x: 0, y: 0 };
 let windowManager;
 let initialized = false;
 
-// get time in seconds since beginning of the day (so that all windows use the same time)
-function getTime ()
-{
-	return (new Date().getTime() - today) / 1000.0;
-}
+let texture; // lưu texture ảnh
+let planeWidth;
+let planeHeight;
+
+const canvas = document.createElement('canvas');
+const ctx = canvas.getContext('2d');
+
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+const width = window.innerWidth;
+const height = window.innerHeight;
+
+console.log(`Chiều rộng: ${width}, Chiều cao: ${height}`);
+window.addEventListener('resize', () => {
+     console.log(`Chiều rộng: ${window.innerWidth}, Chiều cao: ${window.innerHeight}`);
+});
 
 
-if (new URLSearchParams(window.location.search).get("clear"))
-{
-	localStorage.clear();
-}
-else
-{	
-	// this code is essential to circumvent that some browsers preload the content of some pages before you actually hit the url
-	document.addEventListener("visibilitychange", () => 
-	{
-		if (document.visibilityState != 'hidden' && !initialized)
-		{
-			init();
-		}
-	});
+const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+gradient.addColorStop(0, "#1a237e"); // Màu xanh đậm
+gradient.addColorStop(1, "#ff7043"); // Màu cam nhạt
 
-	window.onload = () => {
-		if (document.visibilityState != 'hidden')
-		{
-			init();
-		}
-	};
+ctx.fillStyle = gradient;
+ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-	function init ()
-	{
-		initialized = true;
+const backgroundTexture = new THREE.CanvasTexture(canvas);
 
-		// add a short timeout because window.offsetX reports wrong values before a short period 
-		setTimeout(() => {
-			setupScene();
-			setupWindowManager();
-			resize();
-			updateWindowShape(false);
-			render();
-			window.addEventListener('resize', resize);
-		}, 500)	
-	}
+if (new URLSearchParams(window.location.search).get("clear")) {
+     localStorage.clear();
+} else {
+     document.addEventListener("visibilitychange", () => {
+          if (document.visibilityState !== 'hidden' && !initialized) {
+               init();
+          }
+     });
 
-	function setupScene ()
-	{
-		camera = new t.OrthographicCamera(0, 0, window.innerWidth, window.innerHeight, -10000, 10000);
-		
-		camera.position.z = 2.5;
-		near = camera.position.z - .5;
-		far = camera.position.z + 0.5;
+     window.onload = () => {
+          if (document.visibilityState !== 'hidden') {
+               init();
+          }
+     };
 
-		scene = new t.Scene();
-		scene.background = new t.Color(0.0);
-		scene.add( camera );
+     function init() {
+          initialized = true;
+          setTimeout(() => {
+               setupScene();
+               setupWindowManager();
+               resize();
+               render();
+               window.addEventListener('resize', resize);
+          }, 500);
+     }
 
-		renderer = new t.WebGLRenderer({antialias: true, depthBuffer: true});
-		renderer.setPixelRatio(pixR);
-	    
-	  	world = new t.Object3D();
-		scene.add(world);
+     function setupScene() {
+          camera = new t.OrthographicCamera(0, window.innerWidth, 0, window.innerHeight, -10000, 10000);
+          camera.position.z = 1000;
 
-		renderer.domElement.setAttribute("id", "scene");
-		document.body.appendChild( renderer.domElement );
-	}
+          scene = new t.Scene();
+          scene.background = new t.Color(0xffffff);
+          // scene.background = backgroundTexture;
 
-	function setupWindowManager ()
-	{
-		windowManager = new WindowManager();
-		windowManager.setWinShapeChangeCallback(updateWindowShape);
-		windowManager.setWinChangeCallback(windowsUpdated);
+          scene.add(camera);
 
-		// here you can add your custom metadata to each windows instance
-		let metaData = {foo: "bar"};
+          renderer = new t.WebGLRenderer({ antialias: true, depthBuffer: true });
+          renderer.setPixelRatio(pixR);
 
-		// this will init the windowmanager and add this window to the centralised pool of windows
-		windowManager.init(metaData);
+          world = new t.Object3D();
+          scene.add(world);
 
-		// call update windows initially (it will later be called by the win change callback)
-		windowsUpdated();
-	}
+          renderer.domElement.setAttribute("id", "scene");
+          document.body.appendChild(renderer.domElement);
+     }
 
-	function windowsUpdated ()
-	{
-		updateNumberOfCubes();
-	}
+     function setupWindowManager() {
+          windowManager = new WindowManager();
+          windowManager.setWinShapeChangeCallback(updateWindowShape);
+          windowManager.setWinChangeCallback(updatePlanes);
 
-	function updateNumberOfCubes ()
-	{
-		let wins = windowManager.getWindows();
+          windowManager.init({}); // không cần metadata
 
-		// remove all cubes
-		cubes.forEach((c) => {
-			world.remove(c);
-		})
+          loadImageTexture();
+     }
 
-		cubes = [];
+     function loadImageTexture() {
+          const loader = new t.TextureLoader();
+          loader.load(
+               'Bui_Thi_Ly.jpg',
+               (tex) => {
+                    tex.flipY = false; // Fix the upside-down issue
+                    texture = tex;
 
-		// add new cubes based on the current window setup
-		for (let i = 0; i < wins.length; i++)
-		{
-			let win = wins[i];
+                    const img = tex.image;
+                    const aspect = img.width / img.height;
+                    planeHeight = 500;
+                    planeWidth = planeHeight * aspect;
 
-			let c = new t.Color();
-			c.setHSL(i * .1, 1.0, .5);
+                    updatePlanes(); // sau khi có texture và size
+               },
+               undefined, // onProgress callback (not used here)
+               (err) => {
+                    console.error('Failed to load image:', err);
+               }
+          );
+     }
 
-			let s = 100 + i * 50;
-			let cube = new t.Mesh(new t.BoxGeometry(s, s, s), new t.MeshBasicMaterial({color: c , wireframe: true}));
-			cube.position.x = win.shape.x + (win.shape.w * .5);
-			cube.position.y = win.shape.y + (win.shape.h * .5);
+     function updatePlanes() {
+          const wins = windowManager.getWindows();
 
-			world.add(cube);
-			cubes.push(cube);
-		}
-	}
+          // XÓA hết ảnh cũ (nếu có)
+          planes.forEach(p => {
+               world.remove(p);
+               p.geometry.dispose();
+               p.material.dispose();
+          });
+          planes = [];
 
-	function updateWindowShape (easing = true)
-	{
-		// storing the actual offset in a proxy that we update against in the render function
-		sceneOffsetTarget = {x: -window.screenX, y: -window.screenY};
-		if (!easing) sceneOffset = sceneOffsetTarget;
-	}
+          const mat = new t.MeshBasicMaterial({
+               map: texture,
+               transparent: true,
+               side: t.DoubleSide
+          });
 
+          const plane = new t.Mesh(
+               new t.PlaneGeometry(planeWidth, planeHeight),
+               mat
+          );
 
-	function render ()
-	{
-		let t = getTime();
+          // Đặt vị trí chính giữa cửa sổ
+          plane.position.x = window.innerWidth / 2;
+          // console.log("🚀 ~ updatePlanes ~ window.innerWidth:", window.innerWidth)
+          plane.position.y = window.innerHeight / 2;
 
-		windowManager.update();
+          world.add(plane);
+          planes.push(plane);
+     }
 
+     function updateWindowShape() {
+          sceneOffsetTarget = {
+               x: -window.screenX,
+               y: -window.screenY
+          };
+     }
 
-		// calculate the new position based on the delta between current offset and new offset times a falloff value (to create the nice smoothing effect)
-		let falloff = .05;
-		sceneOffset.x = sceneOffset.x + ((sceneOffsetTarget.x - sceneOffset.x) * falloff);
-		sceneOffset.y = sceneOffset.y + ((sceneOffsetTarget.y - sceneOffset.y) * falloff);
+     function render() {
+          windowManager.update();
 
-		// set the world position to the offset
-		world.position.x = sceneOffset.x;
-		world.position.y = sceneOffset.y;
+          const falloff = 0.05;
 
-		let wins = windowManager.getWindows();
+          sceneOffset.x += (sceneOffsetTarget.x - sceneOffset.x) * falloff;
+          sceneOffset.y += (sceneOffsetTarget.y - sceneOffset.y) * falloff;
 
+          world.position.x = sceneOffset.x;
+          world.position.y = sceneOffset.y;
 
-		// loop through all our cubes and update their positions based on current window positions
-		for (let i = 0; i < cubes.length; i++)
-		{
-			let cube = cubes[i];
-			let win = wins[i];
-			let _t = t;// + i * .2;
+          const wins = windowManager.getWindows();
+          for (let i = 0; i < planes.length; i++) {
+               const plane = planes[i];
+               const win = wins[i];
 
-			let posTarget = {x: win.shape.x + (win.shape.w * .5), y: win.shape.y + (win.shape.h * .5)}
+               const posTarget = {
+                    x: window.innerWidth / 2,
+                    y: window.innerHeight / 2
+               };
 
-			cube.position.x = cube.position.x + (posTarget.x - cube.position.x) * falloff;
-			cube.position.y = cube.position.y + (posTarget.y - cube.position.y) * falloff;
-			cube.rotation.x = _t * .5;
-			cube.rotation.y = _t * .3;
-		};
+               plane.position.x += (posTarget.x - plane.position.x) * falloff;
+               plane.position.y += (posTarget.y - plane.position.y) * falloff;
+               // plane.position.x = window.innerWidth / 2;
+               // plane.position.y = window.innerHeight / 2;
+          }
 
-		renderer.render(scene, camera);
-		requestAnimationFrame(render);
-	}
+          renderer.render(scene, camera);
+          requestAnimationFrame(render);
+     }
 
+     function resize() {
+          const width = window.innerWidth;
+          const height = window.innerHeight;
 
-	// resize the renderer to fit the window size
-	function resize ()
-	{
-		let width = window.innerWidth;
-		let height = window.innerHeight
-		
-		camera = new t.OrthographicCamera(0, width, 0, height, -10000, 10000);
-		camera.updateProjectionMatrix();
-		renderer.setSize( width, height );
-	}
+          camera = new t.OrthographicCamera(0, width, 0, height, -10000, 10000);
+          camera.updateProjectionMatrix();
+          renderer.setSize(width, height);
+
+          // Cập nhật vị trí ảnh để luôn ở giữa cửa sổ
+          if (planes.length > 0) {
+               planes[0].position.x = window.innerWidth / 2;
+               planes[0].position.y = window.innerHeight / 2;
+          }
+     }
 }
