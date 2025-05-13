@@ -6,4 +6,7 @@ npm-debug.log
 *.png
 .env
 .DS_Store
-main.txt WindowManager.txt README.md three-LICENSE 
+main.txt
+WindowManager.txt
+README.md
+three-LICENSE 
