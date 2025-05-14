@@ -83,8 +83,6 @@ if (new URLSearchParams(window.location.search).get("clear")) {
     }
 
     function updatePlanes() {
-        const wins = windowManager.getWindows();
-
         planes.forEach(p => world.remove(p));
         planes = [];
 
